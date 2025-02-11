@@ -24,13 +24,13 @@ pub fn prove_sha256(msg: &[u8]) -> Result<()> {
     let targets = make_circuits(&mut builder, len as u64);
     let mut pw = PartialWitness::new();
 
-    for i in 0..len {
-        pw.set_bool_target(targets.message[i], msg_bits[i]);
+    for (i, msg_bit) in msg_bits.iter().enumerate().take(len) {
+        pw.set_bool_target(targets.message[i], *msg_bit)?;
     }
 
     let expected_res = array_to_bits(hash.as_slice());
-    for i in 0..expected_res.len() {
-        if expected_res[i] {
+    for (i, expected_res_bit) in expected_res.iter().enumerate() {
+        if *expected_res_bit {
             builder.assert_one(targets.digest[i].target);
         } else {
             builder.assert_zero(targets.digest[i].target);
@@ -61,9 +61,9 @@ fn main() -> Result<()> {
     builder.try_init()?;
 
     const MSG_SIZE: usize = 2828;
-    let mut msg = vec![0; MSG_SIZE as usize];
-    for i in 0..MSG_SIZE - 1 {
-        msg[i] = i as u8;
+    let mut msg = vec![0; MSG_SIZE];
+    for (i, msg_bit) in msg.iter_mut().enumerate().take(MSG_SIZE - 1) {
+        *msg_bit = i as u8;
     }
     prove_sha256(&msg)
 }

@@ -1,10 +1,9 @@
 use std::borrow::Borrow;
 
 use itertools::Itertools;
+use plonky2::field::extension::Extendable;
 use plonky2::gates::arithmetic_base::ArithmeticGate;
 use plonky2::gates::arithmetic_extension::ArithmeticExtensionGate;
-use plonky2_field::extension::Extendable;
-use plonky2_field::types::Field;
 
 use plonky2::gates::base_sum::BaseSumGate;
 use plonky2::hash::hash_types::RichField;
@@ -101,12 +100,18 @@ struct BaseSumGenerator<const B: usize> {
     limbs: Vec<BoolTarget>,
 }
 
-impl<F: Field, const B: usize> SimpleGenerator<F> for BaseSumGenerator<B> {
+impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerator<F, D>
+    for BaseSumGenerator<B>
+{
     fn dependencies(&self) -> Vec<Target> {
         self.limbs.iter().map(|b| b.target).collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &PartitionWitness<F>,
+        out_buffer: &mut GeneratedValues<F>,
+    ) -> Result<(), anyhow::Error> {
         let sum = self
             .limbs
             .iter()
@@ -116,7 +121,31 @@ impl<F: Field, const B: usize> SimpleGenerator<F> for BaseSumGenerator<B> {
                 acc * F::from_canonical_usize(B) + F::from_bool(limb)
             });
 
-        out_buffer.set_target(Target::wire(self.row, BaseSumGate::<B>::WIRE_SUM), sum);
+        out_buffer.set_target(Target::wire(self.row, BaseSumGate::<B>::WIRE_SUM), sum)?;
+
+        Ok(())
+    }
+
+    fn id(&self) -> String {
+        todo!()
+    }
+
+    fn serialize(
+        &self,
+        _dst: &mut Vec<u8>,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<()> {
+        todo!()
+    }
+
+    fn deserialize(
+        _src: &mut plonky2::util::serialization::Buffer,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 
@@ -126,11 +155,11 @@ mod tests {
     use rand::{thread_rng, Rng};
 
     use crate::split_base::CircuitBuilderSplit;
+    use plonky2::field::types::Field;
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::circuit_builder::CircuitBuilder;
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-    use plonky2_field::types::Field;
 
     #[test]
     fn test_split_base() -> Result<()> {

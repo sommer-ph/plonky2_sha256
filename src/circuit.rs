@@ -1,10 +1,7 @@
-use plonky2::hash::hash_types::RichField;
 use plonky2::iop::target::BoolTarget;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2_field::extension::Extendable;
+use plonky2::{field::extension::Extendable, hash::hash_types::RichField};
 use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
-
-use crate::split_base::CircuitBuilderSplit;
 
 #[rustfmt::skip]
 pub const H256: [u32; 8] = [
@@ -41,9 +38,9 @@ pub struct Sha256Targets {
 pub fn array_to_bits(bytes: &[u8]) -> Vec<bool> {
     let len = bytes.len();
     let mut ret = Vec::new();
-    for i in 0..len {
+    for byte in bytes.iter().take(len) {
         for j in 0..8 {
-            let b = (bytes[i] >> (7 - j)) & 1;
+            let b = (byte >> (7 - j)) & 1;
             ret.push(b == 1);
         }
     }
@@ -295,38 +292,38 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
         message.push(builder.constant_bool(false));
     }
     for i in 0..64 {
-        let b = ((msg_len_in_bits as u64) >> (63 - i)) & 1;
+        let b = (msg_len_in_bits >> (63 - i)) & 1;
         message.push(builder.constant_bool(b == 1));
     }
 
     // init states
     let mut state = Vec::new();
-    for i in 0..8 {
-        state.push(builder.constant_u32(H256[i]));
+    for c in &H256 {
+        state.push(builder.constant_u32(*c));
     }
 
     let mut k256 = Vec::new();
-    for i in 0..64 {
-        k256.push(builder.constant_u32(K256[i]));
+    for k in &K256 {
+        k256.push(builder.constant_u32(*k));
     }
 
     for blk in 0..block_count {
         let mut x = Vec::new();
-        let mut a = state[0].clone();
-        let mut b = state[1].clone();
-        let mut c = state[2].clone();
-        let mut d = state[3].clone();
-        let mut e = state[4].clone();
-        let mut f = state[5].clone();
-        let mut g = state[6].clone();
-        let mut h = state[7].clone();
+        let mut a = state[0];
+        let mut b = state[1];
+        let mut c = state[2];
+        let mut d = state[3];
+        let mut e = state[4];
+        let mut f = state[5];
+        let mut g = state[6];
+        let mut h = state[7];
 
         for i in 0..16 {
             let index = blk as usize * 512 + i * 32;
             let u32_target = builder.le_sum(message[index..index + 32].iter().rev());
 
             x.push(U32Target(u32_target));
-            let mut t1 = h.clone();
+            let mut t1 = h;
             let big_sigma1_e = big_sigma1(builder, &e);
             t1 = add_u32(builder, &t1, &big_sigma1_e);
             let ch_e_f_g = ch(builder, &e, &f, &g);
@@ -389,8 +386,8 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
         state[7] = add_u32(builder, &state[7], &h);
     }
 
-    for i in 0..8 {
-        let bit_targets = builder.split_le_base::<2>(state[i].0, 32);
+    for word in state.iter().take(8) {
+        let bit_targets = builder.split_le_base::<2>(word.0, 32);
         for j in (0..32).rev() {
             digest.push(BoolTarget::new_unsafe(bit_targets[j]));
         }
@@ -439,7 +436,7 @@ mod tests {
         let mut pw = PartialWitness::new();
 
         for i in 0..len {
-            pw.set_bool_target(targets.message[i], msg_bits[i]);
+            pw.set_bool_target(targets.message[i], msg_bits[i])?;
         }
 
         for i in 0..EXPECTED_RES.len() {
@@ -474,7 +471,7 @@ mod tests {
         let mut pw = PartialWitness::new();
 
         for i in 0..len {
-            pw.set_bool_target(targets.message[i], msg_bits[i]);
+            pw.set_bool_target(targets.message[i], msg_bits[i]).unwrap();
         }
 
         let mut rng = rand::thread_rng();
