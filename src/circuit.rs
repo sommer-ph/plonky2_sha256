@@ -1,6 +1,7 @@
-use plonky2::iop::target::BoolTarget;
-use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2::{field::extension::Extendable, hash::hash_types::RichField};
+use plonky2::{
+    field::extension::Extendable, hash::hash_types::RichField, iop::target::BoolTarget,
+    plonk::circuit_builder::CircuitBuilder,
+};
 use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
 
 #[rustfmt::skip]
@@ -401,8 +402,9 @@ mod tests {
     use anyhow::Result;
     use plonky2::iop::witness::{PartialWitness, WitnessWrite};
     use plonky2::plonk::circuit_builder::CircuitBuilder;
-    use plonky2::plonk::circuit_data::CircuitConfig;
+    use plonky2::plonk::circuit_data::{CircuitConfig, CircuitData};
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
+    use plonky2_u32::gates::arithmetic_u32::{U32GateSerializer, U32GeneratorSerializer};
     use rand::Rng;
 
     use crate::circuit::{array_to_bits, make_circuits};
@@ -448,6 +450,14 @@ mod tests {
         }
 
         let data = builder.build::<C>();
+        let gate_serializer = U32GateSerializer;
+        let generator_serializer = U32GeneratorSerializer::<C, D>::default();
+        let bytes = data
+            .to_bytes(&gate_serializer, &generator_serializer)
+            .unwrap();
+        let data =
+            CircuitData::<F, C, D>::from_bytes(&bytes, &gate_serializer, &generator_serializer)
+                .unwrap();
         let proof = data.prove(pw).unwrap();
 
         data.verify(proof)
