@@ -15,6 +15,7 @@ sha2 = "0.10"
 env_logger = "0.10.0"
 rand = "0.8.4"
 plonky2_u32 = { git = "https://github.com/alxkzmn/plonky2-u32", branch= "sha-256" }
+criterion = "0.5.1"
 
 [profile.release]
 opt-level = 3
@@ -24,3 +25,7 @@ opt-level = 3
 
 [profile.test]
 opt-level = 1
+
+[[bench]]
+name = "prove_verify"
+harness = false
