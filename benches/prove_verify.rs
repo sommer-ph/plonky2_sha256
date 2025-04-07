@@ -8,6 +8,7 @@ use plonky2::{
         config::{GenericConfig, PoseidonGoldilocksConfig},
         proof::ProofWithPublicInputs,
     },
+    util::serialization::Write,
 };
 use plonky2_sha256::circuit::{array_to_bits, make_circuits};
 use rand::Rng;
@@ -36,7 +37,11 @@ fn sha256_no_lookup(c: &mut Criterion) {
             || {
                 let (data, pw) = sha256_no_lookup_prepare();
                 let verifier_data = data.verifier_data();
-                (prove(&data.prover_data(), pw), verifier_data)
+                let proof = prove(&data.prover_data(), pw);
+                let mut buffer = Vec::new();
+                buffer.write_proof(&proof.proof).unwrap();
+                println!("Proof size: {}B", buffer.len());
+                (proof, verifier_data)
             },
             |(proof, data)| {
                 verify(&data, proof);
