@@ -11,6 +11,7 @@ use plonky2::{
     util::serialization::Write,
 };
 use plonky2_sha256::circuit::{array_to_bits, make_circuits};
+use plonky2_u32::gates::arithmetic_u32::{U32GateSerializer, U32GeneratorSerializer};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
@@ -20,6 +21,22 @@ type F = <C as GenericConfig<D>>::F;
 
 fn sha256_no_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("sha256_no_lookup");
+
+    let (data, _) = sha256_no_lookup_prepare();
+    let gate_serializer = U32GateSerializer;
+    let common_data_size = data.common.to_bytes(&gate_serializer).unwrap().len();
+    let generator_serializer = U32GeneratorSerializer::<C, D>::default();
+    let prover_data_size = data
+        .prover_only
+        .to_bytes(&generator_serializer, &data.common)
+        .unwrap()
+        .len();
+
+    println!(
+        "Common data size: {}B, Prover data size: {}B",
+        common_data_size, prover_data_size
+    );
+
     group.sample_size(10);
 
     group.bench_function("sha256_no_lookup_prove", |bench| {
