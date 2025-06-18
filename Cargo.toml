@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plonky2 = { git = "https://github.com/alxkzmn/plonky2.git" }
+plonky2 = { git = "https://github.com/0xPolygonZero/plonky2.git" }
 anyhow = "1.0.40"
 keccak-hash = "0.10.0"
 itertools = "0.10.0"
@@ -14,18 +14,13 @@ log = "0.4.14"
 sha2 = "0.10"
 env_logger = "0.10.0"
 rand = "0.8.4"
-plonky2_u32 = { git = "https://github.com/alxkzmn/plonky2-u32", branch= "sha-256" }
+plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32"}
 criterion = "0.5.1"
 
 [profile.release]
 opt-level = 3
 
-[profile.bench]
-opt-level = 3
 
 [profile.test]
 opt-level = 1
 
-[[bench]]
-name = "prove_verify"
-harness = false

@@ -520,8 +520,8 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "plonky2"
-version = "1.0.2"
-source = "git+https://github.com/alxkzmn/plonky2.git#b2133de48272a65d140ad60ca1d91bc09c5ae646"
+version = "1.1.0"
+source = "git+https://github.com/0xPolygonZero/plonky2.git#82791c4809d6275682c34b926390ecdbdc2a5297"
 dependencies = [
  "ahash",
  "anyhow",
@@ -545,7 +545,7 @@ dependencies = [
 [[package]]
 name = "plonky2_field"
 version = "1.0.0"
-source = "git+https://github.com/alxkzmn/plonky2.git#b2133de48272a65d140ad60ca1d91bc09c5ae646"
+source = "git+https://github.com/0xPolygonZero/plonky2.git#82791c4809d6275682c34b926390ecdbdc2a5297"
 dependencies = [
  "anyhow",
  "itertools 0.11.0",
@@ -560,7 +560,7 @@ dependencies = [
 [[package]]
 name = "plonky2_maybe_rayon"
 version = "1.0.0"
-source = "git+https://github.com/alxkzmn/plonky2.git#b2133de48272a65d140ad60ca1d91bc09c5ae646"
+source = "git+https://github.com/0xPolygonZero/plonky2.git#82791c4809d6275682c34b926390ecdbdc2a5297"
 dependencies = [
  "rayon",
 ]
@@ -584,11 +584,10 @@ dependencies = [
 [[package]]
 name = "plonky2_u32"
 version = "0.1.0"
-source = "git+https://github.com/alxkzmn/plonky2-u32?branch=sha-256#beee942e48d17c419867b83e5e3d9502e8eec9e0"
+source = "git+https://github.com/ax0/plonky2-u32#a18e7906c6da5bb04a301b6f4ee6e9b874519385"
 dependencies = [
  "anyhow",
  "itertools 0.10.5",
- "log",
  "num",
  "plonky2",
 ]
@@ -596,7 +595,7 @@ dependencies = [
 [[package]]
 name = "plonky2_util"
 version = "1.0.0"
-source = "git+https://github.com/alxkzmn/plonky2.git#b2133de48272a65d140ad60ca1d91bc09c5ae646"
+source = "git+https://github.com/0xPolygonZero/plonky2.git#82791c4809d6275682c34b926390ecdbdc2a5297"
 
 [[package]]
 name = "plotters"
