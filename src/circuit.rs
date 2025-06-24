@@ -1,8 +1,17 @@
+use anyhow::Result;
 use plonky2::{
-    field::extension::Extendable, hash::hash_types::RichField, iop::target::BoolTarget,
+    field::extension::Extendable,
+    hash::hash_types::RichField,
+    iop::{
+        target::BoolTarget,
+        witness::{PartialWitness, WitnessWrite},
+    },
     plonk::circuit_builder::CircuitBuilder,
 };
-use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
+use plonky2_u32::{
+    gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target},
+    witness::WitnessU32,
+};
 
 #[rustfmt::skip]
 pub const H256: [u32; 8] = [
@@ -36,7 +45,7 @@ pub struct Sha256Targets {
     pub digest: Vec<BoolTarget>,
 }
 
-pub struct DynamicSha256Targets {
+pub struct VariableLengthSha256Targets {
     pub message: Vec<BoolTarget>,
     pub digest: Vec<BoolTarget>,
     pub msg_len: U32Target,
@@ -394,10 +403,10 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
     Sha256Targets { message, digest }
 }
 
-pub fn make_dynamic_circuits<F: RichField + Extendable<D>, const D: usize>(
+pub fn make_variable_length_circuits<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     tot_bits: usize,
-) -> DynamicSha256Targets {
+) -> VariableLengthSha256Targets {
     assert!(tot_bits % 512 == 0);
     let tot_blocks = tot_bits / 512;
     let mut message = Vec::new();
@@ -409,49 +418,6 @@ pub fn make_dynamic_circuits<F: RichField + Extendable<D>, const D: usize>(
     for _ in 0..tot_bits {
         message.push(builder.add_virtual_bool_target_unsafe());
     }
-
-    let end_len_bits = builder.mul_const(F::from_canonical_usize(512), msg_blocks.0);
-    let constant_32 = builder.constant_u32(32).0;
-    let start_len_bits = builder.sub(end_len_bits, constant_32);
-    let mut after_msg = builder.constant_bool(false);
-
-    // need to check order of bits
-
-    let mut is_len_bit = builder.constant_bool(false);
-    let mut s = builder.constant_u32(0);
-    for i in 0..tot_bits {
-        let i_target = builder.constant_u32(i as u32);
-
-        let is_start_len = builder.is_equal(i_target.0, start_len_bits);
-        let is_end_len = builder.is_equal(i_target.0, end_len_bits);
-
-        let is_msg_len = builder.is_equal(i_target.0, msg_len.0);
-        after_msg = builder.or(after_msg, is_msg_len);
-
-        is_len_bit = builder.or(is_len_bit, is_start_len);
-        let is_not_end_len = builder.not(is_end_len);
-        is_len_bit = builder.and(is_len_bit, is_not_end_len);
-
-        //is_len_bit ->
-        let double_s = builder.mul_const(F::from_canonical_usize(2), s.0);
-        let new_s = builder.add(double_s, message[i].target);
-        s = U32Target(builder.select(is_len_bit, new_s, s.0));
-
-        // (!message[i]) * is_msg_len = 0
-        // !is_len_bit &&  after_msg - >   message[i] == is_msg_len
-
-        let is_not_len_bit = builder.not(is_len_bit);
-        let is_not_len_bit_and_after_msg = builder.and(is_not_len_bit, after_msg);
-
-        let this_should_be_is_msg_len = builder.select(
-            is_not_len_bit_and_after_msg,
-            message[i].target,
-            is_msg_len.target,
-        );
-
-        builder.connect(this_should_be_is_msg_len, is_msg_len.target);
-    }
-    builder.connect(msg_len.0, s.0);
 
     // init states
     let mut state = Vec::new();
@@ -555,12 +521,44 @@ pub fn make_dynamic_circuits<F: RichField + Extendable<D>, const D: usize>(
         }
     }
 
-    DynamicSha256Targets {
+    VariableLengthSha256Targets {
         message,
         digest,
         msg_len,
         msg_blocks,
     }
+}
+
+pub fn fill_variable_length_circuits<F: RichField + Extendable<D>, const D: usize>(
+    pw: &mut PartialWitness<F>,
+    msg: &[u8],
+    tot_bits: usize,
+    targets: &VariableLengthSha256Targets,
+) -> Result<()> {
+    let msg_bits = array_to_bits(msg);
+    let msg_blocks = (msg_bits.len() + 65 + 511) / 512;
+    let msg_bits_len = msg_bits.len();
+
+    assert_eq!(tot_bits, targets.message.len());
+    assert!(tot_bits >= msg_blocks * 512);
+
+    pw.set_u32_target(targets.msg_len, msg_bits_len as u32)?;
+    pw.set_u32_target(targets.msg_blocks, msg_blocks as u32)?;
+
+    for i in 0..tot_bits {
+        let bit = if i < msg_bits_len {
+            msg_bits[i]
+        } else if i == msg_bits_len {
+            true // the mandatory `1` bit
+        } else if i >= msg_blocks * 512 - 64 {
+            // length encoding, big-endian
+            ((msg_bits_len >> (msg_blocks * 512 - i - 1)) & 1) == 1
+        } else {
+            false
+        };
+        pw.set_bool_target(targets.message[i], bit)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -573,10 +571,11 @@ pub mod tests {
             config::{GenericConfig, PoseidonGoldilocksConfig},
         },
     };
-    use plonky2_u32::witness::WitnessU32;
     use sha2::Digest;
 
-    use crate::circuit::{array_to_bits, make_circuits, make_dynamic_circuits};
+    use crate::circuit::{
+        array_to_bits, fill_variable_length_circuits, make_circuits, make_variable_length_circuits,
+    };
 
     #[test]
     fn test_sha256_circuit() -> anyhow::Result<()> {
@@ -842,7 +841,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_dynamic_sha256_short_circuit() -> anyhow::Result<()> {
+    fn test_variable_length_sha256_short_circuit() -> anyhow::Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
@@ -856,36 +855,13 @@ pub mod tests {
         let digest = sha2::Sha256::digest(&msg);
 
         let tot_bits = 4096;
-
         // Create SHA256 circuit using your make_circuits function
-        let sha256_targets = make_dynamic_circuits(&mut builder, tot_bits);
+        let sha256_targets = make_variable_length_circuits(&mut builder, tot_bits);
 
         // Create witness
         let mut pw = PartialWitness::new();
 
-        // Convert message bytes to bits and set as witness
-        let msg_bits = array_to_bits(&msg);
-
-        let msg_bits_len = msg_bits.len();
-
-        let msg_blocks = (msg_bits_len + 65 + 511) / 512;
-
-        for i in 0..tot_bits {
-            if i < msg_bits_len {
-                pw.set_bool_target(sha256_targets.message[i], msg_bits[i])?;
-            } else if i == msg_bits_len {
-                pw.set_bool_target(sha256_targets.message[i], true)?;
-            } else if (msg_blocks * 512 - 64) <= i && i < (msg_blocks * 512) {
-                pw.set_bool_target(
-                    sha256_targets.message[i],
-                    ((msg_bits_len >> (msg_blocks * 512 - i - 1)) & 1) == 1,
-                )?;
-            } else {
-                pw.set_bool_target(sha256_targets.message[i], false)?;
-            }
-        }
-        pw.set_u32_target(sha256_targets.msg_len, msg_bits_len as u32)?;
-        pw.set_u32_target(sha256_targets.msg_blocks, msg_blocks as u32)?;
+        fill_variable_length_circuits::<F, D>(&mut pw, &msg, tot_bits, &sha256_targets)?;
 
         // Convert expected digest bytes to bits and set as witness
         let expected_digest_bits = array_to_bits(&digest);
@@ -915,7 +891,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_dynamic_sha256_circuit() -> anyhow::Result<()> {
+    fn test_variable_length_sha256_circuit() -> anyhow::Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
@@ -1080,34 +1056,12 @@ pub mod tests {
         let tot_bits = 25600; // 50 blocks, instead of 47 blocks which is needed
 
         // Create SHA256 circuit using your make_circuits function
-        let sha256_targets = make_dynamic_circuits(&mut builder, tot_bits);
+        let sha256_targets = make_variable_length_circuits(&mut builder, tot_bits);
 
         // Create witness
         let mut pw = PartialWitness::new();
 
-        // Convert message bytes to bits and set as witness
-        let msg_bits = array_to_bits(&msg);
-
-        let msg_bits_len = msg_bits.len();
-
-        let msg_blocks = (msg_bits_len + 65 + 511) / 512;
-
-        for i in 0..tot_bits {
-            if i < msg_bits_len {
-                pw.set_bool_target(sha256_targets.message[i], msg_bits[i])?;
-            } else if i == msg_bits_len {
-                pw.set_bool_target(sha256_targets.message[i], true)?;
-            } else if (msg_blocks * 512 - 64) <= i && i < (msg_blocks * 512) {
-                pw.set_bool_target(
-                    sha256_targets.message[i],
-                    ((msg_bits_len >> (msg_blocks * 512 - i - 1)) & 1) == 1,
-                )?;
-            } else {
-                pw.set_bool_target(sha256_targets.message[i], false)?;
-            }
-        }
-        pw.set_u32_target(sha256_targets.msg_len, msg_bits_len as u32)?;
-        pw.set_u32_target(sha256_targets.msg_blocks, msg_blocks as u32)?;
+        fill_variable_length_circuits::<F, D>(&mut pw, &msg, tot_bits, &sha256_targets);
 
         // Convert expected digest bytes to bits and set as witness
         let expected_digest_bits = array_to_bits(&digest);
