@@ -41,6 +41,7 @@ pub fn prove_sha256(msg: &[u8]) -> Result<()> {
         "Constructing inner proof with {} gates",
         builder.num_gates()
     );
+    builder.print_gate_counts(0);
     let data = builder.build::<C>();
     let timing = TimingTree::new("prove", Level::Debug);
     let proof = data.prove(pw).unwrap();

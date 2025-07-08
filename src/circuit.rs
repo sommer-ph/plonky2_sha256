@@ -17,6 +17,8 @@ use std::{cell::RefCell};
 
 use crate::{gadgets::XorOps};
 
+pub const CHUNK_SIZE: usize = 32;
+
 #[rustfmt::skip]
 pub const H256: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -187,16 +189,11 @@ fn xor3_with_permutation<F: RichField + Extendable<D>, const D: usize>(
     p3: &Vec<usize>,
 ) -> Vec<BoolTarget> {
     let mut res = Vec::new();
-    for j in 0..2 {
-        let mut a1 = Vec::new();
-        let mut a2 = Vec::new();
-        let mut a3 = Vec::new();
-        for i in 0..16 {
-            a1.push(a_bits[p1[i + j * 16]]);
-            a2.push(a_bits[p2[i + j * 16]]);
-            a3.push(a_bits[p3[i + j * 16]]);
-        }
-        res.extend(builder.add_xor3(a1, a2, a3));
+    for i in 0..CHUNK_SIZE {
+        let a1 = a_bits[p1[i]];
+        let a2 = a_bits[p2[i]];
+        let a3 = a_bits[p3[i]];
+        res.push(builder.add_xor3(a1, a2, a3));
     }
     res
 }
@@ -270,16 +267,13 @@ fn ch_lazy<F: RichField + Extendable<D>, const D: usize>(
     let c_bits = c.get_bits();
 
     let mut res_bits = Vec::new();
-    res_bits.extend(builder.add_ch(
-        a_bits[0..16].to_vec(),
-        b_bits[0..16].to_vec(),
-        c_bits[0..16].to_vec(),
-    ));
-    res_bits.extend(builder.add_ch(
-        a_bits[16..32].to_vec(),
-        b_bits[16..32].to_vec(),
-        c_bits[16..32].to_vec(),
-    ));
+    for i in 0..CHUNK_SIZE{
+        res_bits.push(builder.add_ch(
+            a_bits[i],
+            b_bits[i],
+            c_bits[i],
+        ));
+    }
     LazyU32WithBits::from_bits(builder, res_bits)
 }
 
@@ -301,16 +295,14 @@ fn maj_lazy<F: RichField + Extendable<D>, const D: usize>(
     let c_bits = c.get_bits();
 
     let mut res_bits = Vec::new();
-    res_bits.extend(builder.add_maj(
-        a_bits[0..16].to_vec(),
-        b_bits[0..16].to_vec(),
-        c_bits[0..16].to_vec(),
-    ));
-    res_bits.extend(builder.add_maj(
-        a_bits[16..32].to_vec(),
-        b_bits[16..32].to_vec(),
-        c_bits[16..32].to_vec(),
-    ));
+    for i in 0..CHUNK_SIZE{
+        res_bits.push(builder.add_maj(
+            a_bits[i],
+            b_bits[i],
+            c_bits[i],
+        ));
+    }
+    
     LazyU32WithBits::from_bits(builder, res_bits)
 }
 
@@ -366,7 +358,6 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
     for k in &K256 {
         k256.push(builder.constant_u32(*k));
     }
-
     for blk in 0..block_count {
         let mut x = Vec::new();
 

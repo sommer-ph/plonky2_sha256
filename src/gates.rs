@@ -8,7 +8,7 @@ use plonky2::{
     iop::{
         ext_target::ExtensionTarget,
         generator::{GeneratedValues, SimpleGenerator, WitnessGeneratorRef},
-        target::Target,
+        target::{Target},
         witness::{PartitionWitness, Witness, WitnessWrite},
     },
     plonk::{
@@ -19,10 +19,21 @@ use plonky2::{
     util::serialization::{Buffer, IoResult, Read, Write},
 };
 
+
 #[derive(Copy, Clone, Debug)]
-pub struct Xor3Gate<F: RichField + Extendable<D>, const D: usize> {
+pub struct Xor3Gate<F: RichField + Extendable<D>, const D: usize> { // W: size of chunks
+    pub num_ops: usize,
     _phantom: PhantomData<F>,
 }
+
+impl<F: RichField + Extendable<D>, const D: usize> Xor3Gate<F, D> {
+    /// Determine the maximum number of operations that can fit in one gate for the given config.
+    pub(crate) const fn num_ops(config: &CircuitConfig) -> usize {
+        let wires_per_op = 4;
+        config.num_routed_wires / wires_per_op
+    }
+}
+
 
 impl<F: RichField + Extendable<D>, const D: usize> Default for Xor3Gate<F, D> {
     fn default() -> Self {
@@ -31,47 +42,48 @@ impl<F: RichField + Extendable<D>, const D: usize> Default for Xor3Gate<F, D> {
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> Xor3Gate<F, D> {
-    pub fn new_from_config(_config: &CircuitConfig) -> Self {
+    pub fn new_from_config(config: &CircuitConfig) -> Self {
         Self {
+            num_ops: Self::num_ops(config),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D> {
+impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>{
     fn id(&self) -> String {
         format!("Xor3()")
     }
 
     fn num_wires(&self) -> usize {
-        64
+        self.num_ops * 4
     }
     fn num_constants(&self) -> usize {
         0
     }
     fn degree(&self) -> usize {
-        4
+        2
     }
     fn num_constraints(&self) -> usize {
-        16
+        self.num_ops
     }
 
     fn eval_unfiltered(&self, vars: EvaluationVars<F, D>) -> Vec<F::Extension> {
         let mut res = Vec::new();
-        for i in 0..16 {
-            let a = vars.local_wires[0 + i * 4];
-            let b = vars.local_wires[1 + i * 4];
-            let c = vars.local_wires[2 + i * 4];
-            let o = vars.local_wires[3 + i * 4];
+        for i in 0..self.num_ops{
+            let op_ind = i;
+            let a = vars.local_wires[0 + op_ind * 4];
+            let b = vars.local_wires[1 + op_ind * 4];
+            let c = vars.local_wires[2 + op_ind * 4];
+            let o = vars.local_wires[3 + op_ind * 4];
 
             // Direct formula - no intermediate wires needed
             let u = a - b;
             let d = u * u;
-            let v = d - c;
-            let expected = v * v;
-            res.push(o - expected);
+            let v = o - c;
+            let e = v * v;
+            res.push(d - e);
         }
-
         res
     }
 
@@ -81,46 +93,52 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
         vars: EvaluationTargets<D>,
     ) -> Vec<ExtensionTarget<D>> {
         let mut res = Vec::new();
-        for i in 0..16 {
-            let a = vars.local_wires[0 + i * 4];
-            let b = vars.local_wires[1 + i * 4];
-            let c = vars.local_wires[2 + i * 4];
-            let o = vars.local_wires[3 + i * 4];
+        for i in 0..self.num_ops{
+            let op_ind = i;
+            let a = vars.local_wires[0 + op_ind * 4];
+            let b = vars.local_wires[1 + op_ind * 4];
+            let c = vars.local_wires[2 + op_ind * 4];
+            let o = vars.local_wires[3 + op_ind * 4];
 
             // Build the same computation using circuit operations
             let u = builder.sub_extension(a, b); // u = a - b
             let d = builder.mul_extension(u, u); // d = u * u = (a-b)^2
-            let v = builder.sub_extension(d, c); // v = d - c = (a-b)^2 - c
-            let expected = builder.mul_extension(v, v); // expected = v * v = ((a-b)^2 - c)^2
-
-            // Return the constraint: o - expected = 0
-            let constraint = builder.sub_extension(o, expected);
+            let v = builder.sub_extension(o, c); // v = o - c
+            // Return the constraint: v * v - d= 0
+            let constraint = builder.mul_sub_extension(v, v, d);
             res.push(constraint);
         }
+        
         res
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        vec![WitnessGeneratorRef::new(
-            Xor3Generator::<F, D> {
-                row,
-                _phantom: PhantomData,
-            }
-            .adapter(),
-        )]
+        (0..self.num_ops)
+            .map(|i| {
+                WitnessGeneratorRef::new(
+                    Xor3Generator::<F, D> {
+                        row,
+                        i,
+                        _phantom: PhantomData,
+                    }
+                    .adapter()
+                )
+            })
+            .collect()
     }
 
     // Nothing special in serialized form
     fn serialize(
         &self,
-        _dst: &mut Vec<u8>,
+        dst: &mut Vec<u8>,
         _common_data: &CommonCircuitData<F, D>,
     ) -> IoResult<()> {
-        Ok(())
+        dst.write_usize(self.num_ops)
     }
 
-    fn deserialize(_src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
+            num_ops: src.read_usize().expect("Failed to read num_ops from serialized Xor3Gate"),
             _phantom: PhantomData,
         })
     }
@@ -130,6 +148,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
 #[derive(Debug, Clone)]
 struct Xor3Generator<F: RichField + Extendable<D>, const D: usize> {
     row: usize,
+    i: usize,
     _phantom: PhantomData<F>,
 }
 
@@ -140,11 +159,11 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Xor
 
     fn dependencies(&self) -> Vec<Target> {
         let mut res = Vec::new();
-        for i in 0..16 {
-            res.push(Target::wire(self.row, 0 + i * 4));
-            res.push(Target::wire(self.row, 1 + i * 4));
-            res.push(Target::wire(self.row, 2 + i * 4));
-        }
+        let op_ind = self.i;
+        res.push(Target::wire(self.row, 0 + op_ind * 4));
+        res.push(Target::wire(self.row, 1 + op_ind * 4));
+        res.push(Target::wire(self.row, 2 + op_ind * 4));
+    
         res
     }
 
@@ -153,27 +172,28 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Xor
         witness: &PartitionWitness<F>,
         out_buffer: &mut GeneratedValues<F>,
     ) -> Result<()> {
-        for i in 0..16 {
-            let a = witness.get_target(Target::wire(self.row, 0 + i * 4));
-            let b = witness.get_target(Target::wire(self.row, 1 + i * 4));
-            let c = witness.get_target(Target::wire(self.row, 2 + i * 4));
-            let o = (a.to_canonical_u64() ^ b.to_canonical_u64() ^ c.to_canonical_u64()) & 1;
+        let op_ind = self.i;
+        let a = witness.get_target(Target::wire(self.row, 0 + op_ind * 4));
+        let b = witness.get_target(Target::wire(self.row, 1 + op_ind * 4));
+        let c = witness.get_target(Target::wire(self.row, 2 + op_ind * 4));
+        let o = (a.to_canonical_u64() ^ b.to_canonical_u64() ^ c.to_canonical_u64()) & 1;
 
-            out_buffer.set_target(Target::wire(self.row, 3 + i * 4), F::from_canonical_u64(o))?;
-        }
-
+        out_buffer.set_target(Target::wire(self.row, 3 + op_ind * 4), F::from_canonical_u64(o))?;
         // Set the witness values
         Ok(())
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
-        dst.write_usize(self.row)
+        dst.write_usize(self.row)?;
+        dst.write_usize(self.i)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         let row = src.read_usize()?;
+        let i = src.read_usize()?;
         Ok(Self {
             row,
+            i,
             _phantom: PhantomData,
         })
     }
@@ -181,7 +201,16 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Xor
 
 #[derive(Copy, Clone, Debug)]
 pub struct MajGate<F: RichField + Extendable<D>, const D: usize> {
+    num_ops: usize,
     _phantom: PhantomData<F>,
+}
+
+impl<F: RichField + Extendable<D>, const D: usize> MajGate<F, D> {
+    /// Determine the maximum number of operations that can fit in one gate for the given config.
+    pub(crate) const fn num_ops(config: &CircuitConfig) -> usize {
+        let wires_per_op = 4;
+        config.num_routed_wires / wires_per_op
+    }
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> Default for MajGate<F, D> {
@@ -191,8 +220,9 @@ impl<F: RichField + Extendable<D>, const D: usize> Default for MajGate<F, D> {
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> MajGate<F, D> {
-    pub fn new_from_config(_config: &CircuitConfig) -> Self {
+    pub fn new_from_config(config: &CircuitConfig) -> Self {
         Self {
+            num_ops: Self::num_ops(config),
             _phantom: PhantomData,
         }
     }
@@ -204,7 +234,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
     }
 
     fn num_wires(&self) -> usize {
-        64
+        self.num_ops * 4
     }
     fn num_constants(&self) -> usize {
         0
@@ -213,12 +243,12 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
         3
     }
     fn num_constraints(&self) -> usize {
-        16
+        self.num_ops
     }
 
     fn eval_unfiltered(&self, vars: EvaluationVars<F, D>) -> Vec<F::Extension> {
         let mut res = Vec::new();
-        for i in 0..16 {
+        for i in 0..self.num_ops {
             let a = vars.local_wires[0 + i * 4];
             let b = vars.local_wires[1 + i * 4];
             let c = vars.local_wires[2 + i * 4];
@@ -238,7 +268,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
         vars: EvaluationTargets<D>,
     ) -> Vec<ExtensionTarget<D>> {
         let mut res = Vec::new();
-        for i in 0..16 {
+        for i in 0..self.num_ops {
             let a = vars.local_wires[0 + i * 4];
             let b = vars.local_wires[1 + i * 4];
             let c = vars.local_wires[2 + i * 4];
@@ -261,26 +291,32 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        vec![WitnessGeneratorRef::new(
+        
+        (0..self.num_ops).map(|i| {
+            WitnessGeneratorRef::new(
             MajGenerator::<F, D> {
                 row,
+                i,
                 _phantom: PhantomData,
             }
             .adapter(),
-        )]
+        )
+        })
+        .collect()
     }
 
     // Nothing special in serialized form
     fn serialize(
         &self,
-        _dst: &mut Vec<u8>,
+        dst: &mut Vec<u8>,
         _common_data: &CommonCircuitData<F, D>,
     ) -> IoResult<()> {
-        Ok(())
+        dst.write_usize(self.num_ops)
     }
 
-    fn deserialize(_src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
+            num_ops: src.read_usize().expect("Failed to read num_ops from serialized MajGate"),
             _phantom: PhantomData,
         })
     }
@@ -290,6 +326,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
 #[derive(Debug, Clone)]
 struct MajGenerator<F: RichField + Extendable<D>, const D: usize> {
     row: usize,
+    i: usize,
     _phantom: PhantomData<F>,
 }
 
@@ -300,11 +337,9 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Maj
 
     fn dependencies(&self) -> Vec<Target> {
         let mut res = Vec::new();
-        for i in 0..16 {
-            res.push(Target::wire(self.row, 0 + i * 4));
-            res.push(Target::wire(self.row, 1 + i * 4));
-            res.push(Target::wire(self.row, 2 + i * 4));
-        }
+        res.push(Target::wire(self.row, 0 + self.i * 4));
+        res.push(Target::wire(self.row, 1 + self.i * 4));
+        res.push(Target::wire(self.row, 2 + self.i * 4));
         res
     }
 
@@ -313,30 +348,32 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Maj
         witness: &PartitionWitness<F>,
         out_buffer: &mut GeneratedValues<F>,
     ) -> Result<()> {
-        for i in 0..16 {
-            let a = witness.get_target(Target::wire(self.row, 0 + i * 4));
-            let b = witness.get_target(Target::wire(self.row, 1 + i * 4));
-            let c = witness.get_target(Target::wire(self.row, 2 + i * 4));
-            let o = ((a.to_canonical_u64() & b.to_canonical_u64())
-                ^ (a.to_canonical_u64() & c.to_canonical_u64())
-                ^ (b.to_canonical_u64() & c.to_canonical_u64()))
-                & 1;
+        let a = witness.get_target(Target::wire(self.row, 0 + self.i * 4));
+        let b = witness.get_target(Target::wire(self.row, 1 + self.i * 4));
+        let c = witness.get_target(Target::wire(self.row, 2 + self.i * 4));
+        let o = ((a.to_canonical_u64() & b.to_canonical_u64())
+            ^ (a.to_canonical_u64() & c.to_canonical_u64())
+            ^ (b.to_canonical_u64() & c.to_canonical_u64()))
+            & 1;
 
-            out_buffer.set_target(Target::wire(self.row, 3 + i * 4), F::from_canonical_u64(o))?;
-        }
+        out_buffer.set_target(Target::wire(self.row, 3 + self.i * 4), F::from_canonical_u64(o))?;
+    
 
         // Set the witness values
         Ok(())
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
-        dst.write_usize(self.row)
+        dst.write_usize(self.row)?;
+        dst.write_usize(self.i)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         let row = src.read_usize()?;
+        let i = src.read_usize()?;
         Ok(Self {
             row,
+            i,
             _phantom: PhantomData,
         })
     }
@@ -344,20 +381,27 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Maj
 
 #[derive(Copy, Clone, Debug)]
 pub struct ChGate<F: RichField + Extendable<D>, const D: usize> {
+    num_ops: usize,
     _phantom: PhantomData<F>,
+}
+
+impl<F: RichField + Extendable<D>, const D: usize> ChGate<F, D> {
+   pub fn new_from_config(config: &CircuitConfig) -> Self {
+        Self {
+            num_ops: Self::num_ops(config),
+            _phantom: PhantomData,
+        }
+    }
+    /// Determine the maximum number of operations that can fit in one gate for the given config.
+    pub(crate) const fn num_ops(config: &CircuitConfig) -> usize {
+        let wires_per_op = 4;
+        config.num_routed_wires / wires_per_op
+    }
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> Default for ChGate<F, D> {
     fn default() -> Self {
         Self::new_from_config(&CircuitConfig::standard_recursion_config())
-    }
-}
-
-impl<F: RichField + Extendable<D>, const D: usize> ChGate<F, D> {
-    pub fn new_from_config(_config: &CircuitConfig) -> Self {
-        Self {
-            _phantom: PhantomData,
-        }
     }
 }
 
@@ -367,7 +411,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
     }
 
     fn num_wires(&self) -> usize {
-        64
+        self.num_ops * 4
     }
     fn num_constants(&self) -> usize {
         0
@@ -376,12 +420,12 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
         2
     }
     fn num_constraints(&self) -> usize {
-        16
+        self.num_ops
     }
 
     fn eval_unfiltered(&self, vars: EvaluationVars<F, D>) -> Vec<F::Extension> {
         let mut res = Vec::new();
-        for i in 0..16 {
+        for i in 0..self.num_ops {
             let a = vars.local_wires[0 + i * 4];
             let b = vars.local_wires[1 + i * 4];
             let c = vars.local_wires[2 + i * 4];
@@ -401,7 +445,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
         vars: EvaluationTargets<D>,
     ) -> Vec<ExtensionTarget<D>> {
         let mut res = Vec::new();
-        for i in 0..16 {
+        for i in 0..self.num_ops {
             let a = vars.local_wires[0 + i * 4];
             let b = vars.local_wires[1 + i * 4];
             let c = vars.local_wires[2 + i * 4];
@@ -420,26 +464,30 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        vec![WitnessGeneratorRef::new(
+        (0..self.num_ops).map(|i| {
+            WitnessGeneratorRef::new(
             ChGenerator::<F, D> {
                 row,
+                i,
                 _phantom: PhantomData,
             }
             .adapter(),
-        )]
+        )})
+        .collect()
     }
 
     // Nothing special in serialized form
     fn serialize(
         &self,
-        _dst: &mut Vec<u8>,
+        dst: &mut Vec<u8>,
         _common_data: &CommonCircuitData<F, D>,
     ) -> IoResult<()> {
-        Ok(())
+        dst.write_usize(self.num_ops)
     }
 
-    fn deserialize(_src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
+    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
+            num_ops : src.read_usize().expect("Failed to read num_ops from serialized ChGate"),
             _phantom: PhantomData,
         })
     }
@@ -449,6 +497,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
 #[derive(Debug, Clone)]
 struct ChGenerator<F: RichField + Extendable<D>, const D: usize> {
     row: usize,
+    i : usize,
     _phantom: PhantomData<F>,
 }
 
@@ -459,11 +508,11 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for ChG
 
     fn dependencies(&self) -> Vec<Target> {
         let mut res = Vec::new();
-        for i in 0..16 {
-            res.push(Target::wire(self.row, 0 + i * 4));
-            res.push(Target::wire(self.row, 1 + i * 4));
-            res.push(Target::wire(self.row, 2 + i * 4));
-        }
+        
+        res.push(Target::wire(self.row, 0 + self.i * 4));
+        res.push(Target::wire(self.row, 1 + self.i * 4));
+        res.push(Target::wire(self.row, 2 + self.i * 4));
+    
         res
     }
 
@@ -472,28 +521,30 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for ChG
         witness: &PartitionWitness<F>,
         out_buffer: &mut GeneratedValues<F>,
     ) -> Result<()> {
-        for i in 0..16 {
-            let a = witness.get_target(Target::wire(self.row, 0 + i * 4));
-            let b = witness.get_target(Target::wire(self.row, 1 + i * 4));
-            let c = witness.get_target(Target::wire(self.row, 2 + i * 4));
-            let o = a.to_canonical_u64() * (b.to_canonical_u64() - c.to_canonical_u64())
-                + c.to_canonical_u64();
+        let a = witness.get_target(Target::wire(self.row, 0 + self.i * 4));
+        let b = witness.get_target(Target::wire(self.row, 1 + self.i * 4));
+        let c = witness.get_target(Target::wire(self.row, 2 + self.i * 4));
+        let o = a.to_canonical_u64() * (b.to_canonical_u64() - c.to_canonical_u64())
+            + c.to_canonical_u64();
 
-            out_buffer.set_target(Target::wire(self.row, 3 + i * 4), F::from_canonical_u64(o))?;
-        }
+        out_buffer.set_target(Target::wire(self.row, 3 + self.i * 4), F::from_canonical_u64(o))?;
+    
 
         // Set the witness values
         Ok(())
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
-        dst.write_usize(self.row)
+        dst.write_usize(self.row)?;
+        dst.write_usize(self.i)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         let row = src.read_usize()?;
+        let i = src.read_usize()?;
         Ok(Self {
             row,
+            i,
             _phantom: PhantomData,
         })
     }

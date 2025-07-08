@@ -12,79 +12,82 @@ use plonky2::{
 
 use crate::gates::{ChGate, MajGate};
 // Re-export the gate for convenience
-pub use crate::gates::Xor3Gate;
+use crate::gates::{Xor3Gate};
 
 pub trait XorOps<F: RichField + Extendable<D>, const D: usize> {
     fn add_xor3(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget>;
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget
+    ) -> BoolTarget;
     fn add_maj(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget>;
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget,
+    ) -> BoolTarget;
     fn add_ch(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget>;
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget,
+    ) -> BoolTarget;
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> XorOps<F, D> for CircuitBuilder<F, D> {
     fn add_xor3(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget> {
-        let gate = Xor3Gate::<F, D>::new_from_config(&self.config);
-        let row = self.add_gate(gate, vec![]);
-        let mut res = Vec::new();
-        for i in 0..16 {
-            self.connect(a[i].target, Target::wire(row, 0 + i * 4));
-            self.connect(b[i].target, Target::wire(row, 1 + i * 4));
-            self.connect(c[i].target, Target::wire(row, 2 + i * 4));
-            res.push(BoolTarget::new_unsafe(Target::wire(row, 3 + i * 4)));
-        }
-        res
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget
+    ) -> BoolTarget {
+        let gate = Xor3Gate::new_from_config(&self.config);
+        let constants = vec![];
+        let (gate, i) = self.find_slot(gate, &constants, &constants);
+        let op_ind = i;
+        let wire_a = Target::wire(gate, 0 + op_ind * 4);
+        let wire_b = Target::wire(gate, 1 + op_ind * 4);
+        let wire_c = Target::wire(gate, 2 + op_ind * 4);
+        self.connect(a.target, wire_a);
+        self.connect(b.target, wire_b);
+        self.connect(c.target, wire_c);
+        BoolTarget::new_unsafe(Target::wire(gate, 3 + op_ind * 4))
     }
     fn add_maj(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget> {
-        let gate = MajGate::<F, D>::new_from_config(&self.config);
-        let row = self.add_gate(gate, vec![]);
-        let mut res = Vec::new();
-        for i in 0..16 {
-            self.connect(a[i].target, Target::wire(row, 0 + i * 4));
-            self.connect(b[i].target, Target::wire(row, 1 + i * 4));
-            self.connect(c[i].target, Target::wire(row, 2 + i * 4));
-            res.push(BoolTarget::new_unsafe(Target::wire(row, 3 + i * 4)));
-        }
-        res
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget,
+    ) -> BoolTarget {
+        let gate = MajGate::new_from_config(&self.config);
+        let constants = vec![];
+        let (gate, i) = self.find_slot(gate, &constants, &constants);
+        let op_ind = i;
+        let wire_a = Target::wire(gate, 0 + op_ind * 4);
+        let wire_b = Target::wire(gate, 1 + op_ind * 4);
+        let wire_c = Target::wire(gate, 2 + op_ind * 4);
+        self.connect(a.target, wire_a);
+        self.connect(b.target, wire_b);
+        self.connect(c.target, wire_c);
+        BoolTarget::new_unsafe(Target::wire(gate, 3 + op_ind * 4))
     }
     fn add_ch(
         &mut self,
-        a: Vec<BoolTarget>,
-        b: Vec<BoolTarget>,
-        c: Vec<BoolTarget>,
-    ) -> Vec<BoolTarget> {
-        let gate = ChGate::<F, D>::new_from_config(&self.config);
-        let row = self.add_gate(gate, vec![]);
-        let mut res = Vec::new();
-        for i in 0..16 {
-            self.connect(a[i].target, Target::wire(row, 0 + i * 4));
-            self.connect(b[i].target, Target::wire(row, 1 + i * 4));
-            self.connect(c[i].target, Target::wire(row, 2 + i * 4));
-            res.push(BoolTarget::new_unsafe(Target::wire(row, 3 + i * 4)));
-        }
-        res
+        a: BoolTarget,
+        b: BoolTarget,
+        c: BoolTarget,
+    ) -> BoolTarget {
+        let gate = ChGate::new_from_config(&self.config);
+        let constants = vec![];
+        let (gate, i) = self.find_slot(gate, &constants, &constants);
+        let op_ind = i;
+        let wire_a = Target::wire(gate, 0 + op_ind * 4);
+        let wire_b = Target::wire(gate, 1 + op_ind * 4);
+        let wire_c = Target::wire(gate, 2 + op_ind * 4);
+        self.connect(a.target, wire_a);
+        self.connect(b.target, wire_b);
+        self.connect(c.target, wire_c);
+        BoolTarget::new_unsafe(Target::wire(gate, 3 + op_ind * 4))
     }
 }
