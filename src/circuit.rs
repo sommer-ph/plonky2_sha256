@@ -15,7 +15,7 @@ use plonky2_u32::{
 use std::rc::Rc;
 use std::{cell::RefCell};
 
-use crate::{gadgets::XorOps};
+use crate::{gadgets::{XorOps}};
 
 pub const CHUNK_SIZE: usize = 32;
 
@@ -140,7 +140,7 @@ pub fn u32_to_bits_target<F: RichField + Extendable<D>, const D: usize, const B:
     a: &U32Target,
 ) -> Vec<BoolTarget> {
     let mut res = Vec::new();
-    let bit_targets = builder.split_le_base::<B>(a.0, 32);
+    let bit_targets = builder.split_le_base_optimized::<B>(a.0, 32);
     for i in (0..32).rev() {
         res.push(BoolTarget::new_unsafe(bit_targets[i]));
     }
@@ -153,7 +153,7 @@ pub fn bits_to_u32_target<F: RichField + Extendable<D>, const D: usize>(
 ) -> U32Target {
     let bit_len = bits_target.len();
     assert_eq!(bit_len, 32);
-    U32Target(builder.le_sum(bits_target[0..32].iter().rev()))
+    U32Target(builder.le_sum_optimized(bits_target[0..32].iter().rev()))
 }
 
 // define ROTATE(x, y)  (((x)>>(y)) | ((x)<<(32-(y))))
@@ -316,6 +316,19 @@ fn add_u32_lazy<F: RichField + Extendable<D>, const D: usize>(
     LazyU32WithBits::from_u32(builder, res)
 }
 
+
+fn add_many_u32_lazy<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    to_add: &[LazyU32WithBits<F, D>]
+)-> LazyU32WithBits<F, D> {
+    let mut u32_values = Vec::new();
+    for lazy_u32 in to_add{
+        u32_values.push(lazy_u32.get_u32());
+    }
+    let (res, _carry) = builder.add_many_u32(&u32_values[..]);
+    LazyU32WithBits::from_u32(builder, res)
+}
+
 pub struct Sha256Targets {
     pub message: Vec<BoolTarget>,
     pub digest: Vec<BoolTarget>,
@@ -373,17 +386,14 @@ pub fn make_circuits<F: RichField + Extendable<D>, const D: usize>(
 
         for i in 0..16 {
             let index = blk as usize * 512 + i * 32;
-            let u32_target = builder.le_sum(message[index..index + 32].iter().rev());
+            let u32_target = builder.le_sum_optimized(message[index..index + 32].iter().rev());
             x.push(LazyU32WithBits::from_u32(builder, U32Target(u32_target)));
 
             let mut t1 = h.clone();
             let big_sigma1_e = big_sigma1_lazy(builder, &e);
-            t1 = add_u32_lazy(builder, &t1, &big_sigma1_e);
             let ch_e_f_g = ch_lazy(builder, &e, &f, &g);
-            t1 = add_u32_lazy(builder, &t1, &ch_e_f_g);
             let k256_lazy = LazyU32WithBits::from_u32(builder, k256[i]);
-            t1 = add_u32_lazy(builder, &t1, &k256_lazy);
-            t1 = add_u32_lazy(builder, &t1, &x[i]);
+            t1 = add_many_u32_lazy(builder, &[t1, big_sigma1_e, ch_e_f_g, k256_lazy, x[i].clone()]);
 
             let mut t2 = big_sigma0_lazy(builder, &a);
             let maj_a_b_c = maj_lazy(builder, &a, &b, &c);
@@ -511,7 +521,7 @@ pub fn make_variable_length_circuits<F: RichField + Extendable<D>, const D: usiz
 
         for i in 0..16 {
             let index = blk as usize * 512 + i * 32;
-            let u32_target = builder.le_sum(message[index..index + 32].iter().rev());
+            let u32_target = builder.le_sum_optimized(message[index..index + 32].iter().rev());
             x.push(LazyU32WithBits::from_u32(builder, U32Target(u32_target)));
 
             let mut t1 = h.clone();
