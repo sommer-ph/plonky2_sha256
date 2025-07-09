@@ -70,7 +70,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
         0
     }
     fn degree(&self) -> usize {
-        2
+        4
     }
     fn num_constraints(&self) -> usize {
         self.num_ops
@@ -88,9 +88,9 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
             // Direct formula - no intermediate wires needed
             let u = a - b;
             let d = u * u;
-            let v = o - c;
-            let e = v * v;
-            res.push(d - e);
+            let v = d - c;
+            let expected = v * v;
+            res.push(o - expected);
         }
         res
     }
@@ -111,9 +111,11 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
             // Build the same computation using circuit operations
             let u = builder.sub_extension(a, b); // u = a - b
             let d = builder.mul_extension(u, u); // d = u * u = (a-b)^2
-            let v = builder.sub_extension(o, c); // v = o - c
-            // Return the constraint: v * v - d= 0
-            let constraint = builder.mul_sub_extension(v, v, d);
+            let v = builder.sub_extension(d, c); // v = d - c = (a-b)^2 - c
+            let expected = builder.mul_extension(v, v); // expected = v * v = ((a-b)^2 - c)^2
+
+            // Return the constraint: o - expected = 0
+            let constraint = builder.sub_extension(o, expected);
             res.push(constraint);
         }
         
