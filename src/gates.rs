@@ -1,35 +1,29 @@
 use anyhow::Result;
-use std::marker::PhantomData;
 use core::ops::Range;
+use std::marker::PhantomData;
 
 use plonky2::{
-    field::{extension::Extendable, types::{Field}},
-    gates::{
-        gate::{Gate},
-    },
+    field::{extension::Extendable, types::Field},
+    gates::gate::Gate,
     hash::hash_types::RichField,
     iop::{
         ext_target::ExtensionTarget,
         generator::{GeneratedValues, SimpleGenerator, WitnessGeneratorRef},
-        target::{Target, BoolTarget},
+        target::{BoolTarget, Target},
         witness::{PartitionWitness, Witness, WitnessWrite},
     },
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CommonCircuitData},
-        vars::{
-            EvaluationTargets, EvaluationVars
-        },
-        plonk_common::{reduce_with_powers, reduce_with_powers_ext_circuit}
+        plonk_common::{reduce_with_powers, reduce_with_powers_ext_circuit},
+        vars::{EvaluationTargets, EvaluationVars},
     },
-    util::{
-        serialization::{Buffer, IoResult, Read, Write}
-    }
+    util::serialization::{Buffer, IoResult, Read, Write},
 };
 
-
 #[derive(Copy, Clone, Debug)]
-pub struct Xor3Gate<F: RichField + Extendable<D>, const D: usize> { // W: size of chunks
+pub struct Xor3Gate<F: RichField + Extendable<D>, const D: usize> {
+    // W: size of chunks
     pub num_ops: usize,
     _phantom: PhantomData<F>,
 }
@@ -41,7 +35,6 @@ impl<F: RichField + Extendable<D>, const D: usize> Xor3Gate<F, D> {
         config.num_routed_wires / wires_per_op
     }
 }
-
 
 impl<F: RichField + Extendable<D>, const D: usize> Default for Xor3Gate<F, D> {
     fn default() -> Self {
@@ -58,7 +51,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Xor3Gate<F, D> {
     }
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>{
+impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D> {
     fn id(&self) -> String {
         format!("Xor3()")
     }
@@ -78,7 +71,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
 
     fn eval_unfiltered(&self, vars: EvaluationVars<F, D>) -> Vec<F::Extension> {
         let mut res = Vec::new();
-        for i in 0..self.num_ops{
+        for i in 0..self.num_ops {
             let op_ind = i;
             let a = vars.local_wires[0 + op_ind * 4];
             let b = vars.local_wires[1 + op_ind * 4];
@@ -101,7 +94,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
         vars: EvaluationTargets<D>,
     ) -> Vec<ExtensionTarget<D>> {
         let mut res = Vec::new();
-        for i in 0..self.num_ops{
+        for i in 0..self.num_ops {
             let op_ind = i;
             let a = vars.local_wires[0 + op_ind * 4];
             let b = vars.local_wires[1 + op_ind * 4];
@@ -118,7 +111,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
             let constraint = builder.sub_extension(o, expected);
             res.push(constraint);
         }
-        
+
         res
     }
 
@@ -131,24 +124,22 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for Xor3Gate<F, D>
                         i,
                         _phantom: PhantomData,
                     }
-                    .adapter()
+                    .adapter(),
                 )
             })
             .collect()
     }
 
     // Nothing special in serialized form
-    fn serialize(
-        &self,
-        dst: &mut Vec<u8>,
-        _common_data: &CommonCircuitData<F, D>,
-    ) -> IoResult<()> {
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
         dst.write_usize(self.num_ops)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
-            num_ops: src.read_usize().expect("Failed to read num_ops from serialized Xor3Gate"),
+            num_ops: src
+                .read_usize()
+                .expect("Failed to read num_ops from serialized Xor3Gate"),
             _phantom: PhantomData,
         })
     }
@@ -173,7 +164,7 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Xor
         res.push(Target::wire(self.row, 0 + op_ind * 4));
         res.push(Target::wire(self.row, 1 + op_ind * 4));
         res.push(Target::wire(self.row, 2 + op_ind * 4));
-    
+
         res
     }
 
@@ -188,7 +179,10 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Xor
         let c = witness.get_target(Target::wire(self.row, 2 + op_ind * 4));
         let o = (a.to_canonical_u64() ^ b.to_canonical_u64() ^ c.to_canonical_u64()) & 1;
 
-        out_buffer.set_target(Target::wire(self.row, 3 + op_ind * 4), F::from_canonical_u64(o))?;
+        out_buffer.set_target(
+            Target::wire(self.row, 3 + op_ind * 4),
+            F::from_canonical_u64(o),
+        )?;
         // Set the witness values
         Ok(())
     }
@@ -301,32 +295,30 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for MajGate<F, D> 
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        
-        (0..self.num_ops).map(|i| {
-            WitnessGeneratorRef::new(
-            MajGenerator::<F, D> {
-                row,
-                i,
-                _phantom: PhantomData,
-            }
-            .adapter(),
-        )
-        })
-        .collect()
+        (0..self.num_ops)
+            .map(|i| {
+                WitnessGeneratorRef::new(
+                    MajGenerator::<F, D> {
+                        row,
+                        i,
+                        _phantom: PhantomData,
+                    }
+                    .adapter(),
+                )
+            })
+            .collect()
     }
 
     // Nothing special in serialized form
-    fn serialize(
-        &self,
-        dst: &mut Vec<u8>,
-        _common_data: &CommonCircuitData<F, D>,
-    ) -> IoResult<()> {
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
         dst.write_usize(self.num_ops)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
-            num_ops: src.read_usize().expect("Failed to read num_ops from serialized MajGate"),
+            num_ops: src
+                .read_usize()
+                .expect("Failed to read num_ops from serialized MajGate"),
             _phantom: PhantomData,
         })
     }
@@ -366,8 +358,10 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Maj
             ^ (b.to_canonical_u64() & c.to_canonical_u64()))
             & 1;
 
-        out_buffer.set_target(Target::wire(self.row, 3 + self.i * 4), F::from_canonical_u64(o))?;
-    
+        out_buffer.set_target(
+            Target::wire(self.row, 3 + self.i * 4),
+            F::from_canonical_u64(o),
+        )?;
 
         // Set the witness values
         Ok(())
@@ -396,7 +390,7 @@ pub struct ChGate<F: RichField + Extendable<D>, const D: usize> {
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> ChGate<F, D> {
-   pub fn new_from_config(config: &CircuitConfig) -> Self {
+    pub fn new_from_config(config: &CircuitConfig) -> Self {
         Self {
             num_ops: Self::num_ops(config),
             _phantom: PhantomData,
@@ -474,30 +468,30 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        (0..self.num_ops).map(|i| {
-            WitnessGeneratorRef::new(
-            ChGenerator::<F, D> {
-                row,
-                i,
-                _phantom: PhantomData,
-            }
-            .adapter(),
-        )})
-        .collect()
+        (0..self.num_ops)
+            .map(|i| {
+                WitnessGeneratorRef::new(
+                    ChGenerator::<F, D> {
+                        row,
+                        i,
+                        _phantom: PhantomData,
+                    }
+                    .adapter(),
+                )
+            })
+            .collect()
     }
 
     // Nothing special in serialized form
-    fn serialize(
-        &self,
-        dst: &mut Vec<u8>,
-        _common_data: &CommonCircuitData<F, D>,
-    ) -> IoResult<()> {
+    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
         dst.write_usize(self.num_ops)
     }
 
     fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self> {
         Ok(Self {
-            num_ops : src.read_usize().expect("Failed to read num_ops from serialized ChGate"),
+            num_ops: src
+                .read_usize()
+                .expect("Failed to read num_ops from serialized ChGate"),
             _phantom: PhantomData,
         })
     }
@@ -507,7 +501,7 @@ impl<F: RichField + Extendable<D>, const D: usize> Gate<F, D> for ChGate<F, D> {
 #[derive(Debug, Clone)]
 struct ChGenerator<F: RichField + Extendable<D>, const D: usize> {
     row: usize,
-    i : usize,
+    i: usize,
     _phantom: PhantomData<F>,
 }
 
@@ -518,11 +512,11 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for ChG
 
     fn dependencies(&self) -> Vec<Target> {
         let mut res = Vec::new();
-        
+
         res.push(Target::wire(self.row, 0 + self.i * 4));
         res.push(Target::wire(self.row, 1 + self.i * 4));
         res.push(Target::wire(self.row, 2 + self.i * 4));
-    
+
         res
     }
 
@@ -537,8 +531,10 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for ChG
         let o = a.to_canonical_u64() * (b.to_canonical_u64() - c.to_canonical_u64())
             + c.to_canonical_u64();
 
-        out_buffer.set_target(Target::wire(self.row, 3 + self.i * 4), F::from_canonical_u64(o))?;
-    
+        out_buffer.set_target(
+            Target::wire(self.row, 3 + self.i * 4),
+            F::from_canonical_u64(o),
+        )?;
 
         // Set the witness values
         Ok(())
@@ -560,33 +556,24 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for ChG
     }
 }
 
-
-
 #[derive(Copy, Clone, Debug)]
 pub struct BaseSumGateOptimized<const B: usize> {
     pub num_limbs: usize,
-    pub num_ops:usize
+    pub num_ops: usize,
 }
 
-
 impl<const B: usize> BaseSumGateOptimized<B> {
-    pub(crate) const fn num_ops(config: &CircuitConfig, num_limbs:usize) -> usize {
+    pub(crate) const fn num_ops(config: &CircuitConfig, num_limbs: usize) -> usize {
         let wires_per_op = num_limbs + 1;
         config.num_routed_wires / wires_per_op
     }
-    
-    pub(crate) fn new(num_limbs: usize, num_ops: usize) -> Self{
-        Self{
-            num_limbs, 
-            num_ops
-        }
+
+    pub(crate) fn new(num_limbs: usize, num_ops: usize) -> Self {
+        Self { num_limbs, num_ops }
     }
     pub fn new_from_config(config: &CircuitConfig, num_limbs: usize) -> Self {
         let num_ops = Self::num_ops(config, num_limbs);
-        Self{
-            num_limbs, 
-            num_ops
-        }
+        Self { num_limbs, num_ops }
     }
 
     pub(crate) const WIRE_SUM: usize = 0;
@@ -599,7 +586,9 @@ impl<const B: usize> BaseSumGateOptimized<B> {
     }
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> for BaseSumGateOptimized<B> {
+impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D>
+    for BaseSumGateOptimized<B>
+{
     fn id(&self) -> String {
         format!("{self:?} + Base: {B}")
     }
@@ -616,8 +605,8 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
     }
 
     fn eval_unfiltered(&self, vars: EvaluationVars<F, D>) -> Vec<F::Extension> {
-        let mut constraints= Vec::new();
-        for i in 0..self.num_ops{
+        let mut constraints = Vec::new();
+        for i in 0..self.num_ops {
             let offset: usize = i * (self.num_limbs + 1);
             let sum = vars.local_wires[Self::WIRE_SUM + offset];
             let limbs = vars.local_wires[self.limbs(i)].to_vec();
@@ -631,7 +620,7 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
                 );
             }
         }
-        
+
         constraints
     }
 
@@ -642,7 +631,7 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
     ) -> Vec<ExtensionTarget<D>> {
         let base = builder.constant(F::from_canonical_usize(B));
         let mut constraints = Vec::new();
-        for i in 0..self.num_ops{
+        for i in 0..self.num_ops {
             let offset = i * (self.num_limbs + 1);
             let sum = vars.local_wires[Self::WIRE_SUM + offset];
             let limbs = vars.local_wires[self.limbs(i)].to_vec();
@@ -662,20 +651,24 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
                     acc
                 });
             }
-        }   
-        
+        }
+
         constraints
     }
 
     fn generators(&self, row: usize, _local_constants: &[F]) -> Vec<WitnessGeneratorRef<F, D>> {
-        (0..self.num_ops).map(|i| {
-            WitnessGeneratorRef::new(
-                BaseSumGeneratorOptimized::<B> {
-                    row,
-                    i,
-                    num_limbs: self.num_limbs,
-                }.adapter())
-            }).collect()
+        (0..self.num_ops)
+            .map(|i| {
+                WitnessGeneratorRef::new(
+                    BaseSumGeneratorOptimized::<B> {
+                        row,
+                        i,
+                        num_limbs: self.num_limbs,
+                    }
+                    .adapter(),
+                )
+            })
+            .collect()
     }
 
     // 1 for the sum then `num_limbs` for the limbs.
@@ -698,15 +691,11 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
     }
 }
 
-
-
-
-
 #[derive(Debug, Default)]
 pub struct BaseSumGeneratorOptimized<const B: usize> {
     row: usize,
     i: usize,
-    num_limbs: usize
+    num_limbs: usize,
 }
 
 impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerator<F, D>
@@ -719,8 +708,11 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
     fn dependencies(&self) -> Vec<Target> {
         let offset = self.i * (self.num_limbs + 1);
         let mut res = Vec::new();
-        for j in 0..self.num_limbs{
-            res.push(Target::wire(self.row, BaseSumGateOptimized::<B>::START_LIMBS + j + offset));
+        for j in 0..self.num_limbs {
+            res.push(Target::wire(
+                self.row,
+                BaseSumGateOptimized::<B>::START_LIMBS + j + offset,
+            ));
         }
         res
     }
@@ -731,9 +723,14 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
         out_buffer: &mut GeneratedValues<F>,
     ) -> Result<()> {
         let offset = self.i * (self.num_limbs + 1);
-        let limbs: Vec<BoolTarget> = (0..self.num_limbs).map(|j|{
-            BoolTarget::new_unsafe(Target::wire(self.row, BaseSumGateOptimized::<B>::START_LIMBS + j + offset))
-        }).collect();
+        let limbs: Vec<BoolTarget> = (0..self.num_limbs)
+            .map(|j| {
+                BoolTarget::new_unsafe(Target::wire(
+                    self.row,
+                    BaseSumGateOptimized::<B>::START_LIMBS + j + offset,
+                ))
+            })
+            .collect();
         let sum = limbs
             .iter()
             .map(|&t| witness.get_bool_target(t))
@@ -742,7 +739,10 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
                 acc * F::from_canonical_usize(B) + F::from_bool(limb)
             });
 
-        out_buffer.set_target(Target::wire(self.row, BaseSumGateOptimized::<B>::WIRE_SUM + offset), sum)
+        out_buffer.set_target(
+            Target::wire(self.row, BaseSumGateOptimized::<B>::WIRE_SUM + offset),
+            sum,
+        )
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -758,10 +758,6 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
         Ok(Self { row, i, num_limbs })
     }
 }
-
-
-
-
 
 #[derive(Debug, Default)]
 pub struct BaseSplitGeneratorOptimized<const B: usize> {
@@ -779,7 +775,10 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
 
     fn dependencies(&self) -> Vec<Target> {
         let offset = self.i * (self.num_limbs + 1);
-        vec![Target::wire(self.row, BaseSumGateOptimized::<B>::WIRE_SUM + offset)]
+        vec![Target::wire(
+            self.row,
+            BaseSumGateOptimized::<B>::WIRE_SUM + offset,
+        )]
     }
 
     fn run_once(
@@ -789,7 +788,10 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
     ) -> Result<()> {
         let offset = self.i * (self.num_limbs + 1);
         let sum_value = witness
-            .get_target(Target::wire(self.row, BaseSumGateOptimized::<B>::WIRE_SUM + offset))
+            .get_target(Target::wire(
+                self.row,
+                BaseSumGateOptimized::<B>::WIRE_SUM + offset,
+            ))
             .to_canonical_u64();
         debug_assert_eq!(
             (0..self.num_limbs).fold(sum_value, |acc, _| acc / (B as u64)),
@@ -797,7 +799,8 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
             "Integer too large to fit in given number of limbs"
         );
 
-        let limbs = (BaseSumGateOptimized::<B>::START_LIMBS + offset..BaseSumGateOptimized::<B>::START_LIMBS + self.num_limbs + offset)
+        let limbs = (BaseSumGateOptimized::<B>::START_LIMBS + offset
+            ..BaseSumGateOptimized::<B>::START_LIMBS + self.num_limbs + offset)
             .map(|i| Target::wire(self.row, i));
         let limbs_value = (0..self.num_limbs)
             .scan(sum_value, |acc, _| {
@@ -808,7 +811,9 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
             .collect::<Vec<_>>();
 
         for (b, b_value) in limbs.zip(limbs_value) {
-            out_buffer.set_target(b, b_value).expect(&format!("Failed to set target {:?} to {:?}", b, b_value));
+            out_buffer
+                .set_target(b, b_value)
+                .expect(&format!("Failed to set target {:?} to {:?}", b, b_value));
         }
 
         Ok(())
@@ -826,15 +831,14 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
         let num_limbs = src.read_usize()?;
         Ok(Self { row, i, num_limbs })
     }
-    
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
 
-    use plonky2::field::goldilocks_field::GoldilocksField;
     use crate::gates::BaseSumGateOptimized;
+    use plonky2::field::goldilocks_field::GoldilocksField;
     use plonky2::gates::gate_testing::{test_eval_fns, test_low_degree};
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
 
