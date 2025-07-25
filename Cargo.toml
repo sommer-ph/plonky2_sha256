@@ -14,7 +14,7 @@ log = "0.4.14"
 sha2 = "0.10"
 env_logger = "0.10.0"
 rand = "0.8.4"
-plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32"}
+plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32", rev = rev="a18e790"}
 criterion = "0.5.1"
 
 [profile.release]
