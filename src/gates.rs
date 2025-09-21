@@ -691,7 +691,7 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D>
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BaseSumGeneratorOptimized<const B: usize> {
     row: usize,
     i: usize,
@@ -759,7 +759,7 @@ impl<F: RichField + Extendable<D>, const B: usize, const D: usize> SimpleGenerat
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BaseSplitGeneratorOptimized<const B: usize> {
     pub row: usize,
     pub i: usize,

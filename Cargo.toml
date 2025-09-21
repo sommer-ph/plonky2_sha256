@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plonky2 = { git = "https://github.com/0xPolygonZero/plonky2.git" }
+plonky2 = { git = "https://github.com/sommer-ph/plonky2" }
+plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32" }
 anyhow = "1.0.40"
 keccak-hash = "0.10.0"
 itertools = "0.10.0"
@@ -14,8 +15,20 @@ log = "0.4.14"
 sha2 = "0.10"
 env_logger = "0.10.0"
 rand = "0.8.4"
-plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32", rev="a18e790"}
 criterion = "0.5.1"
+
+# Patch all upstream plonky2 git sources to use local fork (sommer-ph)
+[patch."https://github.com/0xPARC/plonky2"]
+plonky2_field = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_field" }
+plonky2_maybe_rayon = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_maybe_rayon" }
+plonky2 = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2" }
+plonky2_util = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_util" }
+
+[patch."https://github.com/0xPolygonZero/plonky2"]
+plonky2_field = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_field" }
+plonky2_maybe_rayon = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_maybe_rayon" }
+plonky2 = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2" }
+plonky2_util = { git = "https://github.com/sommer-ph/plonky2", package = "plonky2_util" }
 
 [profile.release]
 opt-level = 3
@@ -23,4 +36,3 @@ opt-level = 3
 
 [profile.test]
 opt-level = 1
-
